@@ -7,9 +7,10 @@ trigger:
 - tbb_2019
 
 pool:
-  vmImage: 'ubuntu-18.04'
+  vmImage: 'ubuntu-latest'
 
 steps:
 - script: |
-    make
+    cd src |
+    make -Bj tbb tbbmalloc
   displayName: 'make'
