@@ -2,7 +2,7 @@ name: CI experiments
 on: push
 jobs:
   main:
-    runs-on: ubuntu-latest
+    runs-on: conda/miniconda3
     steps:
     - name: test step
       run: |
