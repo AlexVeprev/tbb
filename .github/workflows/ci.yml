@@ -1,0 +1,9 @@
+name: CI experiments
+on: push
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+    - name: test step
+      run: |
+        cat /etc/*release
