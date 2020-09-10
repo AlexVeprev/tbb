@@ -2,8 +2,13 @@ name: CI experiments
 on: push
 jobs:
   main:
-    runs-on: conda/miniconda3
+    runs-on: ubuntu-latest
     steps:
     - name: test step
       run: |
-        cat /etc/*release
+        wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+        bash Miniconda3-latest-Linux-x86_64.sh -b -p ~/miniconda
+        source ~/miniconda/bin/activate
+        conda install -y -c conda-forge tbb4py
+        python -m tbb test
+        
