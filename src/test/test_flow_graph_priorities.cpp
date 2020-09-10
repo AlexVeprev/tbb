@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2018 Intel Corporation
+    Copyright (c) 2018-2020 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -12,15 +12,12 @@
     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
     See the License for the specific language governing permissions and
     limitations under the License.
-
-
-
-
 */
 
 #include "harness_defs.h"
 
 #if __TBB_PREVIEW_FLOW_GRAPH_PRIORITIES
+#define TBB_DEPRECATED_INPUT_NODE_BODY __TBB_CPF_BUILD
 
 #include "harness_graph.h"
 #include "harness_barrier.h"
@@ -52,7 +49,7 @@ struct TaskInfo {
     int my_task_index;
 };
 std::vector<TaskInfo> g_task_info;
-bool g_work_submitted = false;
+tbb::atomic<bool> g_work_submitted;
 
 const unsigned node_num = 100;
 const unsigned start_index = node_num / 3;
@@ -110,7 +107,7 @@ void test_node( NodeTypeCreator node_creator_func, NodePortRetriever get_sender 
     graph g;
     broadcast_node<int> bn(g);
     function_node<int> tn(g, unlimited, passthru_body());
-    // Using pointers to nodes to avoid errors on compilers, which try to generate assigment
+    // Using pointers to nodes to avoid errors on compilers, which try to generate assignment
     // operator for the nodes
     std::vector<NodeType*> nodes;
     for( unsigned i = 0; i < node_num; ++i ) {
@@ -148,6 +145,13 @@ void test_node( NodeTypeCreator node_creator_func, NodePortRetriever get_sender 
         if( !found_min || !found_max )
             ++internal_order_failures;
         for( unsigned i = 0; i < g_priority_task_index; ++i ) {
+            // This check might fail because priorities do not guarantee ordering, i.e. assumption
+            // that all priority nodes should increment the task counter before any subsequent
+            // no-priority node is not correct. In the worst case, a thread that took a priority
+            // node might be preempted and become the last to increment the counter. That's why the
+            // test passing is based on statistics, which could be affected by machine overload
+            // unfortunately.
+            // TODO: make the test deterministic.
             if( g_task_info[i].my_task_index > int(priority_nodes_num) + MaxThread )
                 ++global_order_failures;
         }
@@ -230,6 +234,7 @@ struct AsyncActivity {
 
 struct StartBody {
     bool has_run;
+#if TBB_DEPRECATED_INPUT_NODE_BODY
     bool operator()(data_type& input) {
         if (has_run) return false;
         else {
@@ -238,6 +243,16 @@ struct StartBody {
             return true;
         }
     }
+#else
+    data_type operator()(tbb::flow_control& fc) {
+        if (has_run){
+            fc.stop();
+            return data_type();
+        }
+        has_run = true;
+        return 1;
+    }
+#endif
     StartBody() : has_run(false) {}
 };
 
@@ -297,13 +312,13 @@ void test( int num_threads ) {
     SpinBarrier barrier(cpu_threads + /*async thread=*/1);
     g_task_num = 0;
     g_async_task_ids.clear();
-    g_async_task_ids.reserve( async_subgraph_reruns );
+    g_async_task_ids.reserve(async_subgraph_reruns);
 
-    tbb::task_scheduler_init init( cpu_threads );
+    tbb::task_scheduler_init init(cpu_threads);
     AsyncActivity activity(barrier);
     graph g;
 
-    source_node<data_type> starter_node(g, StartBody(), false);
+    input_node<data_type> starter_node(g, StartBody());
     function_node<data_type, data_type> cpu_work_node(
         g, unlimited, CpuWorkBody(barrier, nested_cpu_tasks));
     decider_node_type cpu_restarter_node(g, unlimited, DeciderBody(cpu_subgraph_reruns));
@@ -424,7 +439,7 @@ void do_nested_work<PRIORITIZED_WORK>( const tbb::tbb_thread::id& tid,
     }
 }
 
-// Using pointers to nodes to avoid errors on compilers, which try to generate assigment operator
+// Using pointers to nodes to avoid errors on compilers, which try to generate assignment operator
 // for the nodes
 typedef std::vector< continue_node<continue_msg>* > nodes_container_t;
 
@@ -482,7 +497,7 @@ using tbb::task_arena;
 struct ResetGraphFunctor {
     graph& my_graph;
     ResetGraphFunctor(graph& g) : my_graph(g) {}
-    // copy construtor to please some old compilers
+    // copy constructor to please some old compilers
     ResetGraphFunctor(const ResetGraphFunctor& rgf) : my_graph(rgf.my_graph) {}
     void operator()() const { my_graph.reset(); }
 };
@@ -498,7 +513,7 @@ struct OuterBody {
     task_arena& my_inner_arena;
     OuterBody( int max_threads, task_arena& inner_arena )
         : my_max_threads(max_threads), my_inner_arena(inner_arena) {}
-    // copy construtor to please some old compilers
+    // copy constructor to please some old compilers
     OuterBody( const OuterBody& rhs )
         : my_max_threads(rhs.my_max_threads), my_inner_arena(rhs.my_inner_arena) {}
     int operator()( const int& ) {
@@ -584,6 +599,7 @@ int TestMain() {
     }
     for( int p = MinThread; p <= MaxThread; ++p ) {
         PriorityNodesTakePrecedence::test( p );
+        ThreadsEagerReaction::test( p );
         LimitingExecutionToPriorityTask::test( p );
     }
     NestedCase::test( MaxThread );

@@ -71,11 +71,14 @@ Thumbs.db
 /rules.ninja
 *~
 .emacs.desktop
+.tags
 
 # Build system generated files #
 ################################
 CMakeCache.txt
 CMakeFiles/
+cmake/TBBConfig.cmake
+cmake/TBBConfigVersion.cmake
 
 # Other #
 #########
@@ -84,3 +87,4 @@ CMakeFiles/
 .svn
 crash*
 *.tmp
+/.vs
